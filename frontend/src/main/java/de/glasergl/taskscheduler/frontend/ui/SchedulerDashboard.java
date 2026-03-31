@@ -46,14 +46,14 @@ public final class SchedulerDashboard extends JFrame {
 
     private final JTextField baseUrlField = new JTextField("http://127.0.0.1:52398", 28);
     private final JTextField cronField = new JTextField(24);
-    private final JTextField commandField = new JTextField(36);
+    private final JTextField commandField = new JTextField(48);
     private final JButton createButton = new JButton("Create Task");
     private final JButton refreshButton = new JButton("Refresh");
     private final JButton deleteButton = new JButton("Delete Selected Task");
     private final JLabel statusLabel = new JLabel("Waiting for backend...", SwingConstants.LEFT);
 
     private final DefaultTableModel scheduledTableModel = new NonEditableTableModel(
-            new String[]{"UUID", "Cron", "Command", "Schedule TZ", "Next Run (Local)", "Previous Run (Local)", "Last Exit", "Last Status"}, 0);
+            new String[]{"Command", "Cron", "Next Run (Local)", "Previous Run (Local)", "Last Status"}, 0);
     private final DefaultTableModel runningTableModel = new NonEditableTableModel(
             new String[]{"Execution UUID", "Task UUID", "Command", "Started At", "PID"}, 0);
     private final DefaultTableModel historyTableModel = new NonEditableTableModel(
@@ -92,6 +92,11 @@ public final class SchedulerDashboard extends JFrame {
         scheduledTable.setFillsViewportHeight(true);
         runningTable.setFillsViewportHeight(true);
         historyTable.setFillsViewportHeight(true);
+        scheduledTable.getColumnModel().getColumn(0).setPreferredWidth(520);
+        scheduledTable.getColumnModel().getColumn(1).setPreferredWidth(180);
+        scheduledTable.getColumnModel().getColumn(2).setPreferredWidth(150);
+        scheduledTable.getColumnModel().getColumn(3).setPreferredWidth(150);
+        scheduledTable.getColumnModel().getColumn(4).setPreferredWidth(120);
 
         createButton.addActionListener(event -> createTask());
         refreshButton.addActionListener(event -> refreshOverview(true));
@@ -132,20 +137,20 @@ public final class SchedulerDashboard extends JFrame {
 
         constraints.gridx = 0;
         constraints.gridy = 1;
-        panel.add(new JLabel("Cron"), constraints);
+        panel.add(new JLabel("Command"), constraints);
 
         constraints.gridx = 1;
         constraints.gridwidth = 2;
-        panel.add(cronField, constraints);
+        panel.add(commandField, constraints);
 
         constraints.gridx = 0;
         constraints.gridy = 2;
         constraints.gridwidth = 1;
-        panel.add(new JLabel("Command"), constraints);
+        panel.add(new JLabel("Cron"), constraints);
 
         constraints.gridx = 1;
         constraints.weightx = 1.0;
-        panel.add(commandField, constraints);
+        panel.add(cronField, constraints);
 
         constraints.gridx = 2;
         constraints.weightx = 0.0;
@@ -154,7 +159,7 @@ public final class SchedulerDashboard extends JFrame {
         constraints.gridx = 1;
         constraints.gridy = 3;
         constraints.gridwidth = 2;
-        panel.add(new JLabel("Note: 'Schedule TZ' is the fixed offset captured at creation. Next/previous run times are shown in your current local timezone."), constraints);
+        panel.add(new JLabel("Note: the cron is interpreted in your current local timezone when you create the task, then anchored to an invariant timezone so it stays consistent later."), constraints);
 
         return panel;
     }
@@ -299,13 +304,10 @@ public final class SchedulerDashboard extends JFrame {
         currentScheduledTasks = overview.scheduledTasks();
         replaceRows(scheduledTableModel, overview.scheduledTasks().stream()
                 .map(task -> new Object[]{
-                        task.id(),
-                        task.cronExpression(),
                         task.command(),
-                        task.scheduleTimeZone() == null ? "" : task.scheduleTimeZone(),
+                        task.cronExpression(),
                         formatInstant(task.nextRunAt()),
                         formatInstant(task.previousRunAt()),
-                        task.lastExitCode() == null ? "" : task.lastExitCode(),
                         task.lastStatus() == null ? "" : task.lastStatus()
                 })
                 .toList());
