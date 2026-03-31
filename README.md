@@ -24,7 +24,6 @@ This creates runnable jars in:
 - `backend\target\backend-1.0.0.jar`
 - `frontend\target\frontend-1.0.0.jar`
 - `frontend\target\task-scheduler-frontend.exe`
-- `frontend\target\jpackage-image\task-scheduler-frontend-bundled\task-scheduler-frontend-bundled.exe`
 
 ## Start The Backend
 
