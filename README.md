@@ -5,6 +5,23 @@ Small local task scheduler with two Java modules:
 - `backend`: local HTTP API + Quartz-based scheduling + JSON persistence
 - `frontend`: Swing desktop UI for creating, listing, and deleting tasks
 
+## Table Of Contents
+
+- [Requirements](#requirements)
+- [Build](#build)
+- [Start The Backend](#start-the-backend)
+- [Custom Port](#custom-port)
+- [Schedule Timezone](#schedule-timezone)
+- [Start The Frontend](#start-the-frontend)
+- [Backend API](#backend-api)
+- [Create A Task](#create-a-task)
+- [List Tasks, Running Processes, And Recent Results](#list-tasks-running-processes-and-recent-results)
+- [Delete A Task](#delete-a-task)
+- [Cron Notes](#cron-notes)
+- [Persistence](#persistence)
+- [What Gets Stored](#what-gets-stored)
+- [Typical Run Flow](#typical-run-flow)
+
 ## Requirements
 
 - Java 21
