@@ -99,7 +99,9 @@ The Swing app opens a small dashboard where you can:
 - refresh the current scheduler state
 - delete a selected scheduled task
 - inspect running tasks and recent execution results
-- see the fixed schedule timezone that was captured when each task was created
+- hover table cells to see full command text for long entries
+
+![Task Scheduler UI](example.png)
 
 By default the frontend points at:
 
@@ -159,7 +161,7 @@ Current response structure:
 - `runningTasks`
 - `recentExecutions`
 
-The `nextRunAt` and `previousRunAt` timestamps are absolute instants. The frontend shows them in your current local timezone, while `scheduleTimeZone` shows the fixed offset that Quartz uses for the task.
+The `nextRunAt` and `previousRunAt` timestamps are absolute instants. The frontend shows them in your current local timezone.
 
 ### Delete A Task
 
