@@ -1,6 +1,9 @@
 package de.glasergl.taskscheduler.backend.service;
 
 import de.glasergl.taskscheduler.backend.api.HttpApiServer;
+import de.glasergl.taskscheduler.backend.model.ExecutionRecord;
+import de.glasergl.taskscheduler.backend.model.ExecutionStatus;
+import de.glasergl.taskscheduler.backend.model.ScheduledTask;
 import de.glasergl.taskscheduler.backend.model.SchedulerOverview;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -23,7 +26,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Date;
+import java.util.List;
 import java.util.TimeZone;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -91,6 +96,48 @@ class TaskSchedulerServiceTest {
         assertEquals(Instant.parse("2026-10-26T00:00:00Z"), nextFireAt);
         assertEquals(1, berlinView.getHour());
         assertEquals(ZoneOffset.ofHours(1), berlinView.getOffset());
+    }
+
+    @Test
+    void previousRunShouldBeRestoredFromExecutionHistoryAfterRestart(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Path storagePath = tempDir.resolve("state.json");
+        JsonStateStore jsonStateStore = new JsonStateStore(storagePath, objectMapper);
+
+        ScheduledTask task = new ScheduledTask(
+                UUID.randomUUID(),
+                "0 0/30 * * * ?",
+                "echo hello",
+                Instant.parse("2026-03-31T18:00:00Z"),
+                "+02:00"
+        );
+        ExecutionRecord executionRecord = new ExecutionRecord(
+                UUID.randomUUID(),
+                task.id(),
+                task.cronExpression(),
+                task.command(),
+                Instant.parse("2026-03-31T22:00:00Z"),
+                Instant.parse("2026-03-31T22:00:01Z"),
+                0,
+                ExecutionStatus.SUCCEEDED,
+                "Process finished successfully."
+        );
+        jsonStateStore.save(List.of(task), List.of(executionRecord));
+
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(scheduler, jsonStateStore);
+
+        try {
+            service.start();
+
+            SchedulerOverview overview = service.getOverview();
+
+            assertEquals(1, overview.scheduledTasks().size());
+            assertEquals(executionRecord.startedAt(), overview.scheduledTasks().get(0).previousRunAt());
+            assertEquals(ExecutionStatus.SUCCEEDED, overview.scheduledTasks().get(0).lastStatus());
+        } finally {
+            service.close();
+        }
     }
 
     @Test

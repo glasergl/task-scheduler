@@ -26,6 +26,7 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.time.Instant;
@@ -59,9 +60,9 @@ public final class SchedulerDashboard extends JFrame {
     private final DefaultTableModel historyTableModel = new NonEditableTableModel(
             new String[]{"Finished At", "Task UUID", "Command", "Exit Code", "Status", "Message"}, 0);
 
-    private final JTable scheduledTable = new JTable(scheduledTableModel);
-    private final JTable runningTable = new JTable(runningTableModel);
-    private final JTable historyTable = new JTable(historyTableModel);
+    private final JTable scheduledTable = createTooltipTable(scheduledTableModel);
+    private final JTable runningTable = createTooltipTable(runningTableModel);
+    private final JTable historyTable = createTooltipTable(historyTableModel);
 
     private volatile boolean requestInFlight;
     private List<ApiTaskSummary> currentScheduledTasks = List.of();
@@ -361,6 +362,27 @@ public final class SchedulerDashboard extends JFrame {
             current = current.getCause();
         }
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private JTable createTooltipTable(DefaultTableModel tableModel) {
+        return new JTable(tableModel) {
+            @Override
+            public String getToolTipText(MouseEvent event) {
+                int row = rowAtPoint(event.getPoint());
+                int column = columnAtPoint(event.getPoint());
+                if (row < 0 || column < 0) {
+                    return null;
+                }
+
+                Object value = getValueAt(row, column);
+                if (value == null) {
+                    return null;
+                }
+
+                String text = value.toString().trim();
+                return text.isEmpty() ? null : text;
+            }
+        };
     }
 
     private static final class NonEditableTableModel extends DefaultTableModel {

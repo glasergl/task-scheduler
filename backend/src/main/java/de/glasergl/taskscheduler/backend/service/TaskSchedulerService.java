@@ -277,7 +277,11 @@ public final class TaskSchedulerService implements AutoCloseable {
                 .orElse(null);
 
         Instant nextRunAt = trigger != null && trigger.getNextFireTime() != null ? trigger.getNextFireTime().toInstant() : null;
-        Instant previousRunAt = trigger != null && trigger.getPreviousFireTime() != null ? trigger.getPreviousFireTime().toInstant() : null;
+        Instant previousRunAtFromTrigger = trigger != null && trigger.getPreviousFireTime() != null
+                ? trigger.getPreviousFireTime().toInstant()
+                : null;
+        Instant previousRunAtFromHistory = lastExecution != null ? lastExecution.startedAt() : null;
+        Instant previousRunAt = latestInstant(previousRunAtFromTrigger, previousRunAtFromHistory);
 
         return new TaskSummary(
                 task.id(),
@@ -337,5 +341,15 @@ public final class TaskSchedulerService implements AutoCloseable {
             return zoneId.substring(3);
         }
         return zoneId;
+    }
+
+    private static Instant latestInstant(Instant left, Instant right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left.isAfter(right) ? left : right;
     }
 }
