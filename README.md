@@ -80,7 +80,6 @@ Example:
 - if you create a task during MESZ, it is anchored to `UTC+02:00`
 - if you create a task at `01:00` while you are in MESZ, it runs at `01:00` while MESZ is active and later runs at `00:00` after the switch back to MEZ
 - if you create a task at `00:00` while you are in MEZ, it will run at `01:00` during MESZ
-- Guild Wars 2 style example: if an event is at `02:00` in MESZ and `01:00` in MEZ, create the task during MESZ at `02:00`; after the winter switch, the UI will show the same task at `01:00` local time
 
 You can override the scheduling timezone with:
 
