@@ -4,6 +4,7 @@ import de.glasergl.taskscheduler.frontend.model.ApiCreateTaskRequest;
 import de.glasergl.taskscheduler.frontend.model.ApiError;
 import de.glasergl.taskscheduler.frontend.model.ApiScheduledTask;
 import de.glasergl.taskscheduler.frontend.model.ApiSchedulerOverview;
+import de.glasergl.taskscheduler.frontend.model.ApiUpdateTaskRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -66,6 +67,21 @@ public final class SchedulerClient {
         }
     }
 
+    public ApiScheduledTask updateTask(String baseUrl, UUID taskId, String cronExpression, String command) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(taskUri(baseUrl, taskId))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(new ApiUpdateTaskRequest(cronExpression, command)),
+                        StandardCharsets.UTF_8
+                ))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        ensureSuccess(response);
+        return objectMapper.readValue(response.body(), ApiScheduledTask.class);
+    }
+
     private void ensureSuccess(HttpResponse<String> response) throws IOException {
         int statusCode = response.statusCode();
         if (statusCode >= 200 && statusCode < 300) {
@@ -102,4 +118,3 @@ public final class SchedulerClient {
         return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 }
-

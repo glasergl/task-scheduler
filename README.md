@@ -3,7 +3,7 @@
 Small local task scheduler with two Java modules:
 
 - `backend`: local HTTP API + Quartz-based scheduling + JSON persistence
-- `frontend`: Swing desktop UI for creating, listing, and deleting tasks
+- `frontend`: Swing desktop UI for creating, editing, listing, and deleting tasks
 
 ## Table Of Contents
 
@@ -17,6 +17,7 @@ Small local task scheduler with two Java modules:
 - [Create A Task](#create-a-task)
 - [List Tasks, Running Processes, And Recent Results](#list-tasks-running-processes-and-recent-results)
 - [Delete A Task](#delete-a-task)
+- [Update A Task](#update-a-task)
 - [Cron Notes](#cron-notes)
 - [Persistence](#persistence)
 - [What Gets Stored](#what-gets-stored)
@@ -112,6 +113,7 @@ The Swing app opens a small dashboard where you can:
 
 - enter the backend URL
 - create a task from a cron expression and command
+- load a scheduled task into the form and update its cron or command
 - refresh the current scheduler state
 - delete a selected scheduled task
 - inspect running tasks and recent execution results
@@ -135,6 +137,7 @@ Endpoints:
 
 - `POST /api/tasks`
 - `GET /api/tasks`
+- `PUT /api/tasks/{uuid}`
 - `DELETE /api/tasks/{uuid}`
 
 ### Create A Task
@@ -186,6 +189,25 @@ Invoke-RestMethod `
   -Uri "http://127.0.0.1:52398/api/tasks/<uuid>" `
   -Method Delete
 ```
+
+### Update A Task
+
+```powershell
+$body = @{
+  cronExpression = "15 * * * *"
+  command = "echo updated"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:52398/api/tasks/<uuid>" `
+  -Method Put `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Updating a task keeps the same `id` and `createdAt`.
+
+If you change the cron expression, the backend captures the current configured timezone again and anchors the updated schedule to that timezone.
 
 ## Cron Notes
 

@@ -84,6 +84,60 @@ class TaskSchedulerServiceTest {
     }
 
     @Test
+    void updateTaskShouldChangeCronAndCommandAndReschedule(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper),
+                new CommandRunner(),
+                () -> TimeZone.getTimeZone(ZoneId.of("+03:00"))
+        );
+
+        try {
+            service.start();
+
+            ScheduledTask createdTask = service.createTask("0 0 8 * * ?", "echo before");
+            ScheduledTask updatedTask = service.updateTask(createdTask.id(), "0 15 9 * * ?", "echo after");
+            CronTrigger trigger = (CronTrigger) scheduler.getTrigger(TriggerKey.triggerKey(createdTask.id().toString(), "scheduled-tasks"));
+
+            assertEquals(createdTask.id(), updatedTask.id());
+            assertEquals(createdTask.createdAt(), updatedTask.createdAt());
+            assertEquals("0 15 9 * * ?", updatedTask.cronExpression());
+            assertEquals("echo after", updatedTask.command());
+            assertEquals("+03:00", updatedTask.scheduleTimeZone());
+            assertEquals("0 15 9 * * ?", trigger.getCronExpression());
+            assertEquals(10_800_000, trigger.getTimeZone().getRawOffset());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
+    void updateTaskShouldKeepTimezoneWhenOnlyCommandChanges(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper),
+                new CommandRunner(),
+                () -> TimeZone.getTimeZone(ZoneId.of("+03:00"))
+        );
+
+        try {
+            service.start();
+
+            ScheduledTask createdTask = service.createTask("0 0 8 * * ?", "echo before");
+            ScheduledTask updatedTask = service.updateTask(createdTask.id(), "0 0 8 * * ?", "echo after");
+
+            assertEquals(createdTask.scheduleTimeZone(), updatedTask.scheduleTimeZone());
+            assertEquals("echo after", updatedTask.command());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
     @DisplayName("A task created at 02:00 during MESZ should later appear at 01:00 during MEZ")
     void summerAnchoredScheduleShouldAppearOneHourEarlierAfterWinterSwitch() throws Exception {
         CronExpression cronExpression = new CronExpression("0 0 2 * * ?");
@@ -210,6 +264,46 @@ class TaskSchedulerServiceTest {
 
             assertEquals(400, response.statusCode());
             assertTrue(response.body().contains("Cron expression"));
+        } finally {
+            httpApiServer.close();
+            service.close();
+        }
+    }
+
+    @Test
+    void putEndpointShouldUpdateTask(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper)
+        );
+
+        int port;
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            port = serverSocket.getLocalPort();
+        }
+
+        HttpApiServer httpApiServer = new HttpApiServer("127.0.0.1", port, service, objectMapper);
+
+        try {
+            service.start();
+            ScheduledTask task = service.createTask("*/30 * * * *", "echo hello");
+            httpApiServer.start();
+
+            HttpClient httpClient = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/tasks/" + task.id()))
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"cronExpression":"15 * * * *","command":"echo updated"}
+                            """))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            assertEquals(200, response.statusCode(), response.body());
+            assertEquals("echo updated", service.getOverview().scheduledTasks().getFirst().command());
+            assertEquals("0 15 * * * ?", service.getOverview().scheduledTasks().getFirst().cronExpression());
         } finally {
             httpApiServer.close();
             service.close();

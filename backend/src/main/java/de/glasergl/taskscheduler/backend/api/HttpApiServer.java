@@ -3,6 +3,7 @@ package de.glasergl.taskscheduler.backend.api;
 import de.glasergl.taskscheduler.backend.model.ApiError;
 import de.glasergl.taskscheduler.backend.model.CreateTaskRequest;
 import de.glasergl.taskscheduler.backend.model.ScheduledTask;
+import de.glasergl.taskscheduler.backend.model.UpdateTaskRequest;
 import de.glasergl.taskscheduler.backend.service.TaskSchedulerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -59,14 +60,35 @@ public final class HttpApiServer implements AutoCloseable {
                 return;
             }
 
-            if ("DELETE".equalsIgnoreCase(method) && suffix.startsWith("/")) {
+            if (suffix.startsWith("/")) {
                 UUID taskId = UUID.fromString(suffix.substring(1));
-                boolean removed = taskSchedulerService.deleteTask(taskId);
-                if (removed) {
-                    sendNoContent(exchange, 204);
-                } else {
-                    sendJson(exchange, 404, new ApiError("Task " + taskId + " was not found."));
+
+                if ("DELETE".equalsIgnoreCase(method)) {
+                    boolean removed = taskSchedulerService.deleteTask(taskId);
+                    if (removed) {
+                        sendNoContent(exchange, 204);
+                    } else {
+                        sendJson(exchange, 404, new ApiError("Task " + taskId + " was not found."));
+                    }
+                    return;
                 }
+
+                if ("PUT".equalsIgnoreCase(method)) {
+                    UpdateTaskRequest updateTaskRequest = objectMapper.readValue(exchange.getRequestBody(), UpdateTaskRequest.class);
+                    ScheduledTask updatedTask = taskSchedulerService.updateTask(
+                            taskId,
+                            updateTaskRequest.cronExpression(),
+                            updateTaskRequest.command()
+                    );
+                    if (updatedTask == null) {
+                        sendJson(exchange, 404, new ApiError("Task " + taskId + " was not found."));
+                    } else {
+                        sendJson(exchange, 200, updatedTask);
+                    }
+                    return;
+                }
+
+                sendJson(exchange, 405, new ApiError("Unsupported method " + method + "."));
                 return;
             }
 

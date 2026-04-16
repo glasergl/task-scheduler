@@ -29,6 +29,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -105,27 +106,47 @@ public final class TaskSchedulerService implements AutoCloseable {
     }
 
     public ScheduledTask createTask(String cronExpression, String command) {
-        if (command == null || command.isBlank()) {
-            throw new IllegalArgumentException("Command must not be blank.");
-        }
-
-        String normalizedCron = CronExpressionNormalizer.normalize(cronExpression);
-        if (!CronExpression.isValidExpression(normalizedCron)) {
-            throw new IllegalArgumentException("Invalid Quartz cron expression: " + normalizedCron);
-        }
-
-        TimeZone scheduleTimeZone = newTaskTimeZoneSupplier.get();
         ScheduledTask task = new ScheduledTask(
                 UUID.randomUUID(),
-                normalizedCron,
-                command.trim(),
+                requireValidCronExpression(cronExpression),
+                requireCommand(command),
                 Instant.now(),
-                serializeScheduleTimeZone(scheduleTimeZone)
+                serializeScheduleTimeZone(newTaskTimeZoneSupplier.get())
         );
         scheduleTask(task);
         scheduledTasks.put(task.id(), task);
         persistQuietly();
         return task;
+    }
+
+    public ScheduledTask updateTask(UUID taskId, String cronExpression, String command) {
+        ScheduledTask existingTask = scheduledTasks.get(taskId);
+        if (existingTask == null) {
+            return null;
+        }
+
+        String normalizedCron = requireValidCronExpression(cronExpression);
+        String normalizedCommand = requireCommand(command);
+        String scheduleTimeZone = existingTask.scheduleTimeZone();
+        if (!existingTask.cronExpression().equals(normalizedCron)) {
+            scheduleTimeZone = serializeScheduleTimeZone(newTaskTimeZoneSupplier.get());
+        }
+
+        ScheduledTask updatedTask = new ScheduledTask(
+                existingTask.id(),
+                normalizedCron,
+                normalizedCommand,
+                existingTask.createdAt(),
+                scheduleTimeZone
+        );
+
+        if (requiresReschedule(existingTask, updatedTask)) {
+            rescheduleTask(updatedTask);
+        }
+
+        scheduledTasks.put(taskId, updatedTask);
+        persistQuietly();
+        return updatedTask;
     }
 
     public boolean deleteTask(UUID taskId) {
@@ -263,6 +284,24 @@ public final class TaskSchedulerService implements AutoCloseable {
         }
     }
 
+    private void rescheduleTask(ScheduledTask task) {
+        CronTrigger cronTrigger = TriggerBuilder.newTrigger()
+                .withIdentity(triggerKey(task.id()))
+                .forJob(jobKey(task.id()))
+                .withSchedule(
+                        CronScheduleBuilder.cronSchedule(task.cronExpression())
+                                .inTimeZone(resolveScheduleTimeZone(task))
+                                .withMisfireHandlingInstructionDoNothing()
+                )
+                .build();
+
+        try {
+            scheduler.rescheduleJob(triggerKey(task.id()), cronTrigger);
+        } catch (SchedulerException exception) {
+            throw new IllegalStateException("Failed to reschedule task " + task.id(), exception);
+        }
+    }
+
     private TaskSummary buildTaskSummary(ScheduledTask task) {
         Trigger trigger;
         try {
@@ -341,6 +380,26 @@ public final class TaskSchedulerService implements AutoCloseable {
             return zoneId.substring(3);
         }
         return zoneId;
+    }
+
+    private static String requireValidCronExpression(String cronExpression) {
+        String normalizedCron = CronExpressionNormalizer.normalize(cronExpression);
+        if (!CronExpression.isValidExpression(normalizedCron)) {
+            throw new IllegalArgumentException("Invalid Quartz cron expression: " + normalizedCron);
+        }
+        return normalizedCron;
+    }
+
+    private static String requireCommand(String command) {
+        if (command == null || command.isBlank()) {
+            throw new IllegalArgumentException("Command must not be blank.");
+        }
+        return command.trim();
+    }
+
+    private static boolean requiresReschedule(ScheduledTask existingTask, ScheduledTask updatedTask) {
+        return !existingTask.cronExpression().equals(updatedTask.cronExpression())
+                || !Objects.equals(existingTask.scheduleTimeZone(), updatedTask.scheduleTimeZone());
     }
 
     private static Instant latestInstant(Instant left, Instant right) {

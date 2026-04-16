@@ -33,6 +33,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -49,8 +50,12 @@ public final class SchedulerDashboard extends JFrame {
     private final JTextField cronField = new JTextField(24);
     private final JTextField commandField = new JTextField(48);
     private final JButton createButton = new JButton("Create Task");
+    private final JButton updateButton = new JButton("Update Task");
+    private final JButton loadSelectedButton = new JButton("Load Selected Task");
+    private final JButton cancelEditButton = new JButton("Cancel Edit");
     private final JButton refreshButton = new JButton("Refresh");
     private final JButton deleteButton = new JButton("Delete Selected Task");
+    private final JLabel editModeLabel = new JLabel("Create mode", SwingConstants.LEFT);
     private final JLabel statusLabel = new JLabel("Waiting for backend...", SwingConstants.LEFT);
 
     private final DefaultTableModel scheduledTableModel = new NonEditableTableModel(
@@ -66,6 +71,7 @@ public final class SchedulerDashboard extends JFrame {
 
     private volatile boolean requestInFlight;
     private List<ApiTaskSummary> currentScheduledTasks = List.of();
+    private UUID editingTaskId;
 
     public SchedulerDashboard(SchedulerClient schedulerClient) {
         super("Task Scheduler");
@@ -100,8 +106,12 @@ public final class SchedulerDashboard extends JFrame {
         scheduledTable.getColumnModel().getColumn(4).setPreferredWidth(120);
 
         createButton.addActionListener(event -> createTask());
+        updateButton.addActionListener(event -> updateTask());
+        loadSelectedButton.addActionListener(event -> loadSelectedTaskForEditing());
+        cancelEditButton.addActionListener(event -> clearEditMode());
         refreshButton.addActionListener(event -> refreshOverview(true));
         deleteButton.addActionListener(event -> deleteSelectedTask());
+        refreshActionButtons();
 
         addWindowListener(new WindowAdapter() {
             @Override
@@ -157,8 +167,24 @@ public final class SchedulerDashboard extends JFrame {
         constraints.weightx = 0.0;
         panel.add(createButton, constraints);
 
-        constraints.gridx = 1;
+        constraints.gridx = 0;
         constraints.gridy = 3;
+        constraints.gridwidth = 1;
+        panel.add(new JLabel("Edit"), constraints);
+
+        JPanel editActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        editActions.add(editModeLabel);
+        editActions.add(loadSelectedButton);
+        editActions.add(updateButton);
+        editActions.add(cancelEditButton);
+
+        constraints.gridx = 1;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1.0;
+        panel.add(editActions, constraints);
+
+        constraints.gridx = 1;
+        constraints.gridy = 4;
         constraints.gridwidth = 2;
         panel.add(new JLabel("Note: the cron is interpreted in your current local timezone when you create the task, then anchored to an invariant timezone so it stays consistent later."), constraints);
 
@@ -220,6 +246,74 @@ public final class SchedulerDashboard extends JFrame {
             }
             refreshOverview(false);
         }));
+    }
+
+    private void loadSelectedTaskForEditing() {
+        int selectedRow = scheduledTable.getSelectedRow();
+        if (selectedRow < 0) {
+            setStatus("Select a scheduled task first.");
+            return;
+        }
+
+        int modelRow = scheduledTable.convertRowIndexToModel(selectedRow);
+        ApiTaskSummary selectedTask = currentScheduledTasks.get(modelRow);
+        editingTaskId = selectedTask.id();
+        commandField.setText(selectedTask.command());
+        cronField.setText(selectedTask.cronExpression());
+        updateEditModeLabel(selectedTask);
+        refreshActionButtons();
+        setStatus("Loaded selected task into the form.");
+    }
+
+    private void updateTask() {
+        if (requestInFlight) {
+            setStatus("Another request is still running.");
+            return;
+        }
+
+        if (editingTaskId == null) {
+            setStatus("Load a scheduled task first.");
+            return;
+        }
+
+        String cronExpression = cronField.getText().trim();
+        String command = commandField.getText().trim();
+        if (cronExpression.isBlank() || command.isBlank()) {
+            setStatus("Cron and command are required.");
+            return;
+        }
+
+        requestInFlight = true;
+        setControlsEnabled(false);
+        setStatus("Updating task...");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                schedulerClient.updateTask(baseUrlField.getText(), editingTaskId, cronExpression, command);
+                SwingUtilities.invokeLater(() -> {
+                    clearEditMode();
+                    setStatus("Task updated.");
+                });
+            } catch (Exception exception) {
+                throw new RuntimeException(exception);
+            }
+        }, requestExecutor).whenComplete((ignored, throwable) -> SwingUtilities.invokeLater(() -> {
+            requestInFlight = false;
+            setControlsEnabled(true);
+            if (throwable != null) {
+                setStatus("Update failed: " + rootMessage(throwable));
+                return;
+            }
+            refreshOverview(false);
+        }));
+    }
+
+    private void clearEditMode() {
+        editingTaskId = null;
+        cronField.setText("");
+        commandField.setText("");
+        editModeLabel.setText("Create mode");
+        refreshActionButtons();
     }
 
     private void deleteSelectedTask() {
@@ -343,9 +437,20 @@ public final class SchedulerDashboard extends JFrame {
     }
 
     private void setControlsEnabled(boolean enabled) {
-        createButton.setEnabled(enabled);
+        createButton.setEnabled(enabled && editingTaskId == null);
+        updateButton.setEnabled(enabled && editingTaskId != null);
+        loadSelectedButton.setEnabled(enabled);
+        cancelEditButton.setEnabled(enabled && editingTaskId != null);
         refreshButton.setEnabled(enabled);
         deleteButton.setEnabled(enabled);
+    }
+
+    private void updateEditModeLabel(ApiTaskSummary task) {
+        editModeLabel.setText("Editing " + task.id());
+    }
+
+    private void refreshActionButtons() {
+        setControlsEnabled(!requestInFlight);
     }
 
     private void setStatus(String message) {
