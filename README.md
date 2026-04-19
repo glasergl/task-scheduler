@@ -39,8 +39,8 @@ From the project root:
 
 This creates runnable jars in:
 
-- `backend\target\backend-1.0.0.jar`
-- `frontend\target\frontend-1.0.0.jar`
+- `backend\target\backend-1.1.0.jar`
+- `frontend\target\frontend-1.1.0.jar`
 - `frontend\target\task-scheduler-frontend.exe`
 
 ## Start The Backend
@@ -48,7 +48,7 @@ This creates runnable jars in:
 From the project root:
 
 ```powershell
-java -jar backend\target\backend-1.0.0.jar
+java -jar backend\target\backend-1.1.0.jar
 ```
 
 Default backend URL:
@@ -62,7 +62,7 @@ The backend keeps running until you stop it with `Ctrl+C`.
 You can override the default port with a JVM system property:
 
 ```powershell
-java "-Dtask.scheduler.port=18080" -jar backend\target\backend-1.0.0.jar
+java "-Dtask.scheduler.port=18080" -jar backend\target\backend-1.1.0.jar
 ```
 
 You can also use the environment variable `TASK_SCHEDULER_PORT`.
@@ -98,7 +98,7 @@ Examples:
 Open a second terminal in the project root and run:
 
 ```powershell
-java -jar frontend\target\frontend-1.0.0.jar
+java -jar frontend\target\frontend-1.1.0.jar
 ```
 
 Or launch the generated Windows executable:
