@@ -41,7 +41,7 @@ This creates runnable jars in:
 
 - `backend\target\backend-1.1.0.jar`
 - `frontend\target\frontend-1.1.0.jar`
-- `frontend\target\task-scheduler-frontend.exe`
+- `frontend\target\task-scheduler.exe`
 
 ## Start The Backend
 
@@ -104,7 +104,7 @@ java -jar frontend\target\frontend-1.1.0.jar
 Or launch the generated Windows executable:
 
 ```powershell
-.\frontend\target\task-scheduler-frontend.exe
+.\frontend\target\task-scheduler.exe
 ```
 
 This `.exe` uses Java from the local machine environment.

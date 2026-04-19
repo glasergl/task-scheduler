@@ -7,6 +7,15 @@
     <artifactId>task-scheduler</artifactId>
     <version>1.1.0</version>
     <packaging>pom</packaging>
+    <name>Task Scheduler</name>
+    <description>Local task scheduler with a desktop UI and local HTTP backend.</description>
+    <url>https://glasergl.de</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>Gabriel Glaser</name>
+        <url>https://glasergl.de</url>
+    </organization>
 
     <modules>
         <module>backend</module>

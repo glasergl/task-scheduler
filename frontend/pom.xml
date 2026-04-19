@@ -10,7 +10,8 @@
     </parent>
 
     <artifactId>frontend</artifactId>
-    <name>task-scheduler-frontend</name>
+    <name>Task Scheduler Frontend</name>
+    <description>Task Scheduler desktop application</description>
 
     <dependencies>
         <dependency>
@@ -27,6 +28,38 @@
 
     <build>
         <plugins>
+            <plugin>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.4.0</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>${project.build.directory}</directory>
+                            <includes>
+                                <include>task-scheduler-frontend.exe</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>remove-legacy-exe-name</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <delete file="${project.build.directory}/task-scheduler-frontend.exe"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -60,12 +93,25 @@
                         </goals>
                         <configuration>
                             <headerType>gui</headerType>
-                            <outfile>${project.build.directory}/task-scheduler-frontend.exe</outfile>
+                            <outfile>${project.build.directory}/task-scheduler.exe</outfile>
                             <jar>${project.build.directory}/${project.build.finalName}.jar</jar>
                             <errTitle>Task Scheduler</errTitle>
                             <icon>${project.basedir}/src/main/resources/branding/task-scheduler.ico</icon>
                             <downloadUrl>https://adoptium.net/</downloadUrl>
+                            <supportUrl>https://glasergl.de</supportUrl>
                             <chdir>.</chdir>
+                            <versionInfo>
+                                <fileVersion>${project.version}.0</fileVersion>
+                                <txtFileVersion>${project.version}</txtFileVersion>
+                                <fileDescription>Task Scheduler desktop application</fileDescription>
+                                <copyright>Copyright (c) Gabriel Glaser</copyright>
+                                <productVersion>${project.version}.0</productVersion>
+                                <txtProductVersion>${project.version}</txtProductVersion>
+                                <productName>Task Scheduler</productName>
+                                <companyName>Gabriel Glaser</companyName>
+                                <internalName>task-scheduler</internalName>
+                                <originalFilename>task-scheduler.exe</originalFilename>
+                            </versionInfo>
                             <jre>
                                 <minVersion>21</minVersion>
                             </jre>
