@@ -18,7 +18,6 @@ import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
@@ -44,7 +43,6 @@ public final class SchedulerDashboard extends JFrame {
 
     private final SchedulerClient schedulerClient;
     private final ExecutorService requestExecutor;
-    private final Timer refreshTimer;
 
     private final JTextField baseUrlField = new JTextField("http://127.0.0.1:52398", 28);
     private final JTextField cronField = new JTextField(24);
@@ -83,7 +81,6 @@ public final class SchedulerDashboard extends JFrame {
             thread.setDaemon(true);
             return thread;
         });
-        this.refreshTimer = new Timer(5_000, event -> refreshOverview(false));
 
         cronField.setToolTipText("Quartz cron or standard 5-field cron. Five fields are expanded with leading seconds.");
         commandField.setToolTipText("Example: ping 127.0.0.1 -n 2");
@@ -121,14 +118,12 @@ public final class SchedulerDashboard extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
-                refreshTimer.stop();
                 requestExecutor.shutdownNow();
             }
         });
 
         setSize(1260, 720);
         setLocationRelativeTo(null);
-        refreshTimer.start();
         refreshOverview(true);
     }
 
