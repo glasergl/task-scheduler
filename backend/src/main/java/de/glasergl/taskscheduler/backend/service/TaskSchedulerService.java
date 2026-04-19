@@ -111,7 +111,8 @@ public final class TaskSchedulerService implements AutoCloseable {
                 requireValidCronExpression(cronExpression),
                 requireCommand(command),
                 Instant.now(),
-                serializeScheduleTimeZone(newTaskTimeZoneSupplier.get())
+                serializeScheduleTimeZone(newTaskTimeZoneSupplier.get()),
+                true
         );
         scheduleTask(task);
         scheduledTasks.put(task.id(), task);
@@ -137,10 +138,11 @@ public final class TaskSchedulerService implements AutoCloseable {
                 normalizedCron,
                 normalizedCommand,
                 existingTask.createdAt(),
-                scheduleTimeZone
+                scheduleTimeZone,
+                existingTask.enabled()
         );
 
-        if (requiresReschedule(existingTask, updatedTask)) {
+        if (existingTask.enabled() && requiresReschedule(existingTask, updatedTask)) {
             rescheduleTask(updatedTask);
         }
 
@@ -149,18 +151,21 @@ public final class TaskSchedulerService implements AutoCloseable {
         return updatedTask;
     }
 
+    public ScheduledTask enableTask(UUID taskId) {
+        return changeTaskEnabledState(taskId, true);
+    }
+
+    public ScheduledTask disableTask(UUID taskId) {
+        return changeTaskEnabledState(taskId, false);
+    }
+
     public boolean deleteTask(UUID taskId) {
         ScheduledTask removedTask = scheduledTasks.remove(taskId);
         if (removedTask == null) {
             return false;
         }
 
-        try {
-            scheduler.deleteJob(jobKey(taskId));
-        } catch (SchedulerException exception) {
-            throw new IllegalStateException("Failed to delete Quartz job for task " + taskId, exception);
-        }
-
+        deleteScheduledJob(taskId);
         persistQuietly();
         return true;
     }
@@ -169,6 +174,10 @@ public final class TaskSchedulerService implements AutoCloseable {
         ScheduledTask task = scheduledTasks.get(taskId);
         if (task == null) {
             LOGGER.log(System.Logger.Level.WARNING, "Ignoring trigger for missing task {0}", taskId);
+            return;
+        }
+        if (!task.enabled()) {
+            LOGGER.log(System.Logger.Level.INFO, "Ignoring trigger for disabled task {0}", taskId);
             return;
         }
 
@@ -249,7 +258,9 @@ public final class TaskSchedulerService implements AutoCloseable {
         PersistedState persistedState = jsonStateStore.load();
         for (ScheduledTask task : persistedState.tasks()) {
             scheduledTasks.put(task.id(), task);
-            scheduleTask(task);
+            if (task.enabled()) {
+                scheduleTask(task);
+            }
         }
 
         for (ExecutionRecord executionRecord : persistedState.executionHistory()) {
@@ -302,6 +313,34 @@ public final class TaskSchedulerService implements AutoCloseable {
         }
     }
 
+    private ScheduledTask changeTaskEnabledState(UUID taskId, boolean enabled) {
+        ScheduledTask existingTask = scheduledTasks.get(taskId);
+        if (existingTask == null) {
+            return null;
+        }
+        if (existingTask.enabled() == enabled) {
+            return existingTask;
+        }
+
+        ScheduledTask updatedTask = new ScheduledTask(
+                existingTask.id(),
+                existingTask.cronExpression(),
+                existingTask.command(),
+                existingTask.createdAt(),
+                existingTask.scheduleTimeZone(),
+                enabled
+        );
+
+        deleteScheduledJob(taskId);
+        if (enabled) {
+            scheduleTask(updatedTask);
+        }
+
+        scheduledTasks.put(taskId, updatedTask);
+        persistQuietly();
+        return updatedTask;
+    }
+
     private TaskSummary buildTaskSummary(ScheduledTask task) {
         Trigger trigger;
         try {
@@ -315,8 +354,10 @@ public final class TaskSchedulerService implements AutoCloseable {
                 .findFirst()
                 .orElse(null);
 
-        Instant nextRunAt = trigger != null && trigger.getNextFireTime() != null ? trigger.getNextFireTime().toInstant() : null;
-        Instant previousRunAtFromTrigger = trigger != null && trigger.getPreviousFireTime() != null
+        Instant nextRunAt = task.enabled() && trigger != null && trigger.getNextFireTime() != null
+                ? trigger.getNextFireTime().toInstant()
+                : null;
+        Instant previousRunAtFromTrigger = task.enabled() && trigger != null && trigger.getPreviousFireTime() != null
                 ? trigger.getPreviousFireTime().toInstant()
                 : null;
         Instant previousRunAtFromHistory = lastExecution != null ? lastExecution.startedAt() : null;
@@ -328,6 +369,7 @@ public final class TaskSchedulerService implements AutoCloseable {
                 task.command(),
                 task.createdAt(),
                 task.scheduleTimeZone(),
+                task.enabled(),
                 nextRunAt,
                 previousRunAt,
                 lastExecution != null ? lastExecution.exitCode() : null,
@@ -351,6 +393,14 @@ public final class TaskSchedulerService implements AutoCloseable {
             jsonStateStore.save(scheduledTasks.values(), executionHistory);
         } catch (IOException exception) {
             LOGGER.log(System.Logger.Level.WARNING, "Failed to persist task scheduler state.", exception);
+        }
+    }
+
+    private void deleteScheduledJob(UUID taskId) {
+        try {
+            scheduler.deleteJob(jobKey(taskId));
+        } catch (SchedulerException exception) {
+            throw new IllegalStateException("Failed to delete Quartz job for task " + taskId, exception);
         }
     }
 

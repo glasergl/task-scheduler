@@ -20,6 +20,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -33,6 +34,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TaskSchedulerServiceTest {
@@ -138,6 +141,77 @@ class TaskSchedulerServiceTest {
     }
 
     @Test
+    void disableTaskShouldKeepTaskButRemoveItsSchedule(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper)
+        );
+
+        try {
+            service.start();
+
+            ScheduledTask createdTask = service.createTask("0 0 8 * * ?", "echo before");
+            ScheduledTask disabledTask = service.disableTask(createdTask.id());
+
+            assertFalse(disabledTask.enabled());
+            assertNull(scheduler.getTrigger(TriggerKey.triggerKey(createdTask.id().toString(), "scheduled-tasks")));
+            assertFalse(service.getOverview().scheduledTasks().getFirst().enabled());
+            assertNull(service.getOverview().scheduledTasks().getFirst().nextRunAt());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
+    void enableTaskShouldRescheduleDisabledTask(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper)
+        );
+
+        try {
+            service.start();
+
+            ScheduledTask createdTask = service.createTask("0 0 8 * * ?", "echo before");
+            service.disableTask(createdTask.id());
+            ScheduledTask enabledTask = service.enableTask(createdTask.id());
+
+            assertTrue(enabledTask.enabled());
+            assertNotNull(scheduler.getTrigger(TriggerKey.triggerKey(createdTask.id().toString(), "scheduled-tasks")));
+            assertTrue(service.getOverview().scheduledTasks().getFirst().enabled());
+            assertNotNull(service.getOverview().scheduledTasks().getFirst().nextRunAt());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
+    void disabledTaskShouldNotExecuteWhenTriggered(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper)
+        );
+
+        try {
+            service.start();
+
+            ScheduledTask createdTask = service.createTask("0 0 8 * * ?", "echo hello");
+            service.disableTask(createdTask.id());
+            service.executeTask(createdTask.id());
+
+            assertTrue(service.getOverview().recentExecutions().isEmpty());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
     @DisplayName("A task created at 02:00 during MESZ should later appear at 01:00 during MEZ")
     void summerAnchoredScheduleShouldAppearOneHourEarlierAfterWinterSwitch() throws Exception {
         CronExpression cronExpression = new CronExpression("0 0 2 * * ?");
@@ -189,6 +263,44 @@ class TaskSchedulerServiceTest {
             assertEquals(1, overview.scheduledTasks().size());
             assertEquals(executionRecord.startedAt(), overview.scheduledTasks().get(0).previousRunAt());
             assertEquals(ExecutionStatus.SUCCEEDED, overview.scheduledTasks().get(0).lastStatus());
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
+    void persistedTasksWithoutEnabledFieldShouldDefaultToEnabled(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Path storagePath = tempDir.resolve("state.json");
+        Files.writeString(storagePath, """
+                {
+                  "tasks" : [ {
+                    "id" : "a5b1917c-6e48-462f-bec8-676b6cdb00f8",
+                    "cronExpression" : "0 0/30 * * * ?",
+                    "command" : "echo hello",
+                    "createdAt" : "2026-03-31T18:00:00Z",
+                    "scheduleTimeZone" : "+02:00"
+                  } ],
+                  "executionHistory" : [ ]
+                }
+                """);
+
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(storagePath, objectMapper)
+        );
+
+        try {
+            service.start();
+
+            SchedulerOverview overview = service.getOverview();
+
+            assertTrue(overview.scheduledTasks().getFirst().enabled());
+            assertNotNull(scheduler.getTrigger(TriggerKey.triggerKey(
+                    overview.scheduledTasks().getFirst().id().toString(),
+                    "scheduled-tasks"
+            )));
         } finally {
             service.close();
         }
@@ -304,6 +416,53 @@ class TaskSchedulerServiceTest {
             assertEquals(200, response.statusCode(), response.body());
             assertEquals("echo updated", service.getOverview().scheduledTasks().getFirst().command());
             assertEquals("0 15 * * * ?", service.getOverview().scheduledTasks().getFirst().cronExpression());
+        } finally {
+            httpApiServer.close();
+            service.close();
+        }
+    }
+
+    @Test
+    void postDisableAndEnableEndpointsShouldToggleTaskState(@TempDir Path tempDir) throws Exception {
+        ObjectMapper objectMapper = JsonSupport.createObjectMapper();
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        TaskSchedulerService service = new TaskSchedulerService(
+                scheduler,
+                new JsonStateStore(tempDir.resolve("state.json"), objectMapper)
+        );
+
+        int port;
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            port = serverSocket.getLocalPort();
+        }
+
+        HttpApiServer httpApiServer = new HttpApiServer("127.0.0.1", port, service, objectMapper);
+
+        try {
+            service.start();
+            ScheduledTask task = service.createTask("*/30 * * * *", "echo hello");
+            httpApiServer.start();
+
+            HttpClient httpClient = HttpClient.newHttpClient();
+            HttpResponse<String> disableResponse = httpClient.send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/tasks/" + task.id() + "/disable"))
+                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            assertEquals(200, disableResponse.statusCode(), disableResponse.body());
+            assertFalse(service.getOverview().scheduledTasks().getFirst().enabled());
+
+            HttpResponse<String> enableResponse = httpClient.send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/tasks/" + task.id() + "/enable"))
+                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            assertEquals(200, enableResponse.statusCode(), enableResponse.body());
+            assertTrue(service.getOverview().scheduledTasks().getFirst().enabled());
         } finally {
             httpApiServer.close();
             service.close();

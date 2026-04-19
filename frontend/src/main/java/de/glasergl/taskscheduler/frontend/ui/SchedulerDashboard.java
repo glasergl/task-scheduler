@@ -54,12 +54,14 @@ public final class SchedulerDashboard extends JFrame {
     private final JButton loadSelectedButton = new JButton("Load Selected Task");
     private final JButton cancelEditButton = new JButton("Cancel Edit");
     private final JButton refreshButton = new JButton("Refresh");
+    private final JButton enableButton = new JButton("Enable Selected Task");
+    private final JButton disableButton = new JButton("Disable Selected Task");
     private final JButton deleteButton = new JButton("Delete Selected Task");
     private final JLabel editModeLabel = new JLabel("Create mode", SwingConstants.LEFT);
     private final JLabel statusLabel = new JLabel("Waiting for backend...", SwingConstants.LEFT);
 
     private final DefaultTableModel scheduledTableModel = new NonEditableTableModel(
-            new String[]{"Command", "Cron", "Next Run (Local)", "Previous Run (Local)", "Last Status"}, 0);
+            new String[]{"State", "Command", "Cron", "Next Run (Local)", "Previous Run (Local)", "Last Status"}, 0);
     private final DefaultTableModel runningTableModel = new NonEditableTableModel(
             new String[]{"Execution UUID", "Task UUID", "Command", "Started At", "PID"}, 0);
     private final DefaultTableModel historyTableModel = new NonEditableTableModel(
@@ -99,17 +101,20 @@ public final class SchedulerDashboard extends JFrame {
         scheduledTable.setFillsViewportHeight(true);
         runningTable.setFillsViewportHeight(true);
         historyTable.setFillsViewportHeight(true);
-        scheduledTable.getColumnModel().getColumn(0).setPreferredWidth(520);
-        scheduledTable.getColumnModel().getColumn(1).setPreferredWidth(180);
-        scheduledTable.getColumnModel().getColumn(2).setPreferredWidth(150);
+        scheduledTable.getColumnModel().getColumn(0).setPreferredWidth(90);
+        scheduledTable.getColumnModel().getColumn(1).setPreferredWidth(520);
+        scheduledTable.getColumnModel().getColumn(2).setPreferredWidth(180);
         scheduledTable.getColumnModel().getColumn(3).setPreferredWidth(150);
-        scheduledTable.getColumnModel().getColumn(4).setPreferredWidth(120);
+        scheduledTable.getColumnModel().getColumn(4).setPreferredWidth(150);
+        scheduledTable.getColumnModel().getColumn(5).setPreferredWidth(120);
 
         createButton.addActionListener(event -> createTask());
         updateButton.addActionListener(event -> updateTask());
         loadSelectedButton.addActionListener(event -> loadSelectedTaskForEditing());
         cancelEditButton.addActionListener(event -> clearEditMode());
         refreshButton.addActionListener(event -> refreshOverview(true));
+        enableButton.addActionListener(event -> enableSelectedTask());
+        disableButton.addActionListener(event -> disableSelectedTask());
         deleteButton.addActionListener(event -> deleteSelectedTask());
         refreshActionButtons();
 
@@ -204,6 +209,8 @@ public final class SchedulerDashboard extends JFrame {
         panel.add(new JScrollPane(scheduledTable), BorderLayout.CENTER);
 
         JPanel actionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actionsPanel.add(enableButton);
+        actionsPanel.add(disableButton);
         actionsPanel.add(deleteButton);
         panel.add(actionsPanel, BorderLayout.SOUTH);
         return panel;
@@ -316,6 +323,14 @@ public final class SchedulerDashboard extends JFrame {
         refreshActionButtons();
     }
 
+    private void disableSelectedTask() {
+        changeSelectedTaskEnabledState(false);
+    }
+
+    private void enableSelectedTask() {
+        changeSelectedTaskEnabledState(true);
+    }
+
     private void deleteSelectedTask() {
         if (requestInFlight) {
             setStatus("Another request is still running.");
@@ -363,6 +378,51 @@ public final class SchedulerDashboard extends JFrame {
         }));
     }
 
+    private void changeSelectedTaskEnabledState(boolean enabled) {
+        if (requestInFlight) {
+            setStatus("Another request is still running.");
+            return;
+        }
+
+        int selectedRow = scheduledTable.getSelectedRow();
+        if (selectedRow < 0) {
+            setStatus("Select a scheduled task first.");
+            return;
+        }
+
+        int modelRow = scheduledTable.convertRowIndexToModel(selectedRow);
+        ApiTaskSummary selectedTask = currentScheduledTasks.get(modelRow);
+        if (selectedTask.enabled() == enabled) {
+            setStatus(enabled ? "Task is already enabled." : "Task is already disabled.");
+            return;
+        }
+
+        requestInFlight = true;
+        setControlsEnabled(false);
+        setStatus(enabled ? "Enabling task..." : "Disabling task...");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                if (enabled) {
+                    schedulerClient.enableTask(baseUrlField.getText(), selectedTask.id());
+                } else {
+                    schedulerClient.disableTask(baseUrlField.getText(), selectedTask.id());
+                }
+            } catch (Exception exception) {
+                throw new RuntimeException(exception);
+            }
+        }, requestExecutor).whenComplete((ignored, throwable) -> SwingUtilities.invokeLater(() -> {
+            requestInFlight = false;
+            setControlsEnabled(true);
+            if (throwable != null) {
+                setStatus((enabled ? "Enable" : "Disable") + " failed: " + rootMessage(throwable));
+                return;
+            }
+            setStatus(enabled ? "Task enabled." : "Task disabled.");
+            refreshOverview(false);
+        }));
+    }
+
     private void refreshOverview(boolean userInitiated) {
         if (requestInFlight) {
             if (userInitiated) {
@@ -399,6 +459,7 @@ public final class SchedulerDashboard extends JFrame {
         currentScheduledTasks = overview.scheduledTasks();
         replaceRows(scheduledTableModel, overview.scheduledTasks().stream()
                 .map(task -> new Object[]{
+                        task.enabled() ? "Enabled" : "Disabled",
                         task.command(),
                         task.cronExpression(),
                         formatInstant(task.nextRunAt()),
@@ -442,11 +503,13 @@ public final class SchedulerDashboard extends JFrame {
         loadSelectedButton.setEnabled(enabled);
         cancelEditButton.setEnabled(enabled && editingTaskId != null);
         refreshButton.setEnabled(enabled);
+        enableButton.setEnabled(enabled);
+        disableButton.setEnabled(enabled);
         deleteButton.setEnabled(enabled);
     }
 
     private void updateEditModeLabel(ApiTaskSummary task) {
-        editModeLabel.setText("Editing " + task.id());
+        editModeLabel.setText("Editing " + task.id() + (task.enabled() ? "" : " (disabled)"));
     }
 
     private void refreshActionButtons() {

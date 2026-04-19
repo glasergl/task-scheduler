@@ -9,6 +9,7 @@ public record ApiTaskSummary(
         String command,
         Instant createdAt,
         String scheduleTimeZone,
+        boolean enabled,
         Instant nextRunAt,
         Instant previousRunAt,
         Integer lastExitCode,

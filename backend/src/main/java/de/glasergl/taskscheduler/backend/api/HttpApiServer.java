@@ -61,7 +61,18 @@ public final class HttpApiServer implements AutoCloseable {
             }
 
             if (suffix.startsWith("/")) {
-                UUID taskId = UUID.fromString(suffix.substring(1));
+                String[] segments = suffix.substring(1).split("/");
+                UUID taskId = UUID.fromString(segments[0]);
+
+                if (segments.length == 2 && "POST".equalsIgnoreCase(method)) {
+                    handleTaskAction(exchange, taskId, segments[1]);
+                    return;
+                }
+
+                if (segments.length != 1) {
+                    sendJson(exchange, 404, new ApiError("Unknown endpoint."));
+                    return;
+                }
 
                 if ("DELETE".equalsIgnoreCase(method)) {
                     boolean removed = taskSchedulerService.deleteTask(taskId);
@@ -100,6 +111,25 @@ public final class HttpApiServer implements AutoCloseable {
         } finally {
             exchange.close();
         }
+    }
+
+    private void handleTaskAction(HttpExchange exchange, UUID taskId, String action) throws IOException {
+        ScheduledTask updatedTask;
+        if ("disable".equalsIgnoreCase(action)) {
+            updatedTask = taskSchedulerService.disableTask(taskId);
+        } else if ("enable".equalsIgnoreCase(action)) {
+            updatedTask = taskSchedulerService.enableTask(taskId);
+        } else {
+            sendJson(exchange, 404, new ApiError("Unknown endpoint."));
+            return;
+        }
+
+        if (updatedTask == null) {
+            sendJson(exchange, 404, new ApiError("Task " + taskId + " was not found."));
+            return;
+        }
+
+        sendJson(exchange, 200, updatedTask);
     }
 
     private void handleCollection(HttpExchange exchange, String method) throws IOException {

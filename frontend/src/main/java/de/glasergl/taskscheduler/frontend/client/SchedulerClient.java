@@ -82,6 +82,14 @@ public final class SchedulerClient {
         return objectMapper.readValue(response.body(), ApiScheduledTask.class);
     }
 
+    public ApiScheduledTask disableTask(String baseUrl, UUID taskId) throws IOException, InterruptedException {
+        return toggleTask(baseUrl, taskId, "disable");
+    }
+
+    public ApiScheduledTask enableTask(String baseUrl, UUID taskId) throws IOException, InterruptedException {
+        return toggleTask(baseUrl, taskId, "enable");
+    }
+
     private void ensureSuccess(HttpResponse<String> response) throws IOException {
         int statusCode = response.statusCode();
         if (statusCode >= 200 && statusCode < 300) {
@@ -107,6 +115,21 @@ public final class SchedulerClient {
 
     private URI taskUri(String baseUrl, UUID taskId) {
         return URI.create(normalizeBaseUrl(baseUrl) + "/api/tasks/" + taskId);
+    }
+
+    private ApiScheduledTask toggleTask(String baseUrl, UUID taskId, String action) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(taskActionUri(baseUrl, taskId, action))
+                .timeout(Duration.ofSeconds(10))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        ensureSuccess(response);
+        return objectMapper.readValue(response.body(), ApiScheduledTask.class);
+    }
+
+    private URI taskActionUri(String baseUrl, UUID taskId, String action) {
+        return URI.create(normalizeBaseUrl(baseUrl) + "/api/tasks/" + taskId + "/" + action);
     }
 
     private String normalizeBaseUrl(String baseUrl) {

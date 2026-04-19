@@ -114,6 +114,7 @@ The Swing app opens a small dashboard where you can:
 - enter the backend URL
 - create a task from a cron expression and command
 - load a scheduled task into the form and update its cron or command
+- temporarily disable or re-enable a selected scheduled task
 - refresh the current scheduler state
 - delete a selected scheduled task
 - inspect running tasks and recent execution results
@@ -138,6 +139,8 @@ Endpoints:
 - `POST /api/tasks`
 - `GET /api/tasks`
 - `PUT /api/tasks/{uuid}`
+- `POST /api/tasks/{uuid}/disable`
+- `POST /api/tasks/{uuid}/enable`
 - `DELETE /api/tasks/{uuid}`
 
 ### Create A Task
@@ -167,6 +170,7 @@ Response fields include:
 - `command`
 - `createdAt`
 - `scheduleTimeZone`
+- `enabled`
 
 ### List Tasks, Running Processes, And Recent Results
 
@@ -181,6 +185,8 @@ Current response structure:
 - `recentExecutions`
 
 The `nextRunAt` and `previousRunAt` timestamps are absolute instants. The frontend shows them in your current local timezone.
+
+Disabled tasks remain stored and visible, but they do not have a next execution time until you enable them again.
 
 ### Delete A Task
 
@@ -208,6 +214,22 @@ Invoke-RestMethod `
 Updating a task keeps the same `id` and `createdAt`.
 
 If you change the cron expression, the backend captures the current configured timezone again and anchors the updated schedule to that timezone.
+
+### Temporarily Disable A Task
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:52398/api/tasks/<uuid>/disable" `
+  -Method Post
+```
+
+### Re-Enable A Task
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:52398/api/tasks/<uuid>/enable" `
+  -Method Post
+```
 
 ## Cron Notes
 
